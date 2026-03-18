@@ -138,10 +138,20 @@ def fetch_og(url: str) -> dict:
         tag = soup.find("meta", property=prop) or soup.find("meta", attrs={"name": prop})
         return (tag.get("content") or "") if tag else ""
 
+    # パッチハイライト画像: h2#patch-patch-highlights の直後の a.skins[href]
+    highlight_image = ""
+    h2 = soup.find("h2", id="patch-patch-highlights")
+    if h2:
+        section = h2.find_parent()
+        a = section.find_next("a", class_="skins") if section else None
+        if a and a.get("href"):
+            highlight_image = a["href"]
+            print(f"[INFO] パッチハイライト画像取得: {highlight_image}")
+
     return {
         "title": og("og:title") or og("twitter:title"),
         "description": og("og:description") or og("twitter:description"),
-        "image": og("og:image") or og("twitter:image"),
+        "image": highlight_image or og("og:image") or og("twitter:image"),
     }
 
 
