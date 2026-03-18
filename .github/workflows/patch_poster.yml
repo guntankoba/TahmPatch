@@ -1,0 +1,43 @@
+name: Patch Poster
+
+on:
+  schedule:
+    - cron: "0 */6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  post:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run patch poster
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          LOL_THUMBNAIL_URL: ${{ secrets.LOL_THUMBNAIL_URL }}
+        run: python patch_poster.py
+
+      - name: Commit state.json if changed
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          if git diff --quiet state.json 2>/dev/null && git ls-files --error-unmatch state.json 2>/dev/null; then
+            echo "state.json に変更なし"
+          else
+            git add state.json
+            git commit -m "chore: update state.json [skip ci]" || echo "コミット対象なし"
+            git push
+          fi
