@@ -1,51 +1,63 @@
 # TahmPatch
 
-Discord の patch bot が投稿した LoL パッチノートリンクを検出し、
-**日本語版（ja-jp）** の URL を返信するボットです。
+League of Legends の最新パッチノートを Discord に自動通知するツール。
 
-## できること
-- `League of Legends Patch 26.5 Notes` のようなタイトルから日本語リンクを生成
-- メッセージ/Embed に含まれる URL を検出
-- patchbot 特有のリンク（リダイレクト）も追跡して、最終到達先が英語版なら日本語版へ変換
-- patchbot の投稿のみをトリガーにして返信（`PATCHBOT_USER_IDS` 未設定時は名前に `patchbot` を含むBotを対象）
+GitHub Actions が6時間ごとに LoL 公式タグページをスクレイピングし、新しいパッチノートを Discord Webhook に Embed 投稿する。
 
-## セットアップ
-```bash
-python -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
+## 動作概要
+
+```
+GitHub Actions (cron: 6時間ごと)
+    ↓
+patch_poster.py
+    ├── state.json から last_posted_slug を読み込む
+    ├── LoL タグページをスクレイピング（Primary: CSS / Fallback: __NEXT_DATA__）
+    ├── slug が変わっていなければ終了（二重投稿防止）
+    ├── パッチノートページから OGP 情報を取得
+    ├── Discord Webhook に Embed 投稿
+    └── state.json を更新・コミット
 ```
 
 ## 環境変数
-- `DISCORD_BOT_TOKEN` : Discord Bot トークン（必須）
-- `TARGET_CHANNEL_IDS` : 監視対象チャンネル ID（任意、カンマ区切り）
-  - 未指定なら全チャンネルで反応
-- `PATCHBOT_USER_IDS` : patchbot のユーザー ID（任意、カンマ区切り）
-  - 指定時はこの ID の Bot 投稿のみを処理
-  - 未指定時は Bot の表示名/名前に `patchbot` を含む投稿を処理
 
-## 実行
+| 変数名 | 必須 | デフォルト | 説明 |
+|--------|------|-----------|------|
+| `DISCORD_WEBHOOK_URL` | **必須** | — | Discord Webhook URL |
+| `LOL_THUMBNAIL_URL` | 任意 | — | Embed サムネイル画像 URL |
+| `STATE_FILE_PATH` | 任意 | `state.json` | state ファイルパス |
+| `DRY_RUN` | 任意 | `false` | `true` の場合 Webhook 投稿しない |
+
+## GitHub Secrets 設定
+
+リポジトリの **Settings → Secrets and variables → Actions** で以下を設定：
+
+| Secret 名 | 内容 |
+|-----------|------|
+| `DISCORD_WEBHOOK_URL` | Discord チャンネルの Webhook URL |
+| `LOL_THUMBNAIL_URL` | （任意）Embed サムネイル画像 URL |
+
+## ローカルでのテスト
+
 ```bash
-python bot.py
+# 仮想環境セットアップ
+uv venv
+uv pip sync requirements.txt
+source .venv/bin/activate
+
+# DRY_RUN で Embed JSON を確認（Webhook 投稿なし）
+DRY_RUN=true python patch_poster.py
+
+# 実投稿テスト
+DISCORD_WEBHOOK_URL=<your_webhook_url> python patch_poster.py
 ```
 
+## 手動実行
 
-## Railway デプロイ
-1. Railway で GitHub リポジトリを新規プロジェクトとして作成
-2. Variables に以下を設定
-   - `DISCORD_BOT_TOKEN`（必須）
-   - `PATCHBOT_USER_IDS`（推奨: patchbot のユーザーID）
-   - `TARGET_CHANNEL_IDS`（任意）
-3. 本リポジトリには `Procfile` と `railway.json` を同梱しているため、
-   Railway は `python bot.py` を Worker として起動します
-4. デプロイ後、ログに `ログイン完了:` が表示されれば起動成功です
+GitHub Actions の **Actions タブ → Patch Poster → Run workflow** から手動実行可能。
 
-> 注意: `PATCHBOT_USER_IDS` を設定しない場合は、Bot名に `patchbot` を含む投稿を対象にします。
-> 本番運用では誤検知防止のため、ID指定を推奨します。
+## アーキテクチャ詳細
 
-## 動作イメージ
-英語リンク:
-`https://www.leagueoflegends.com/en-us/news/game-updates/league-of-legends-patch-26-5-notes/`
-
-返信:
-`https://www.leagueoflegends.com/ja-jp/news/game-updates/league-of-legends-patch-26-5-notes/`
+- **スクレイピング戦略:** Primary（CSS セレクタ）→ Fallback（`__NEXT_DATA__` JSON）の2段階
+- **二重投稿防止:** `state.json` の `last_posted_slug` と比較
+- **投稿成功後のみ** `state.json` を更新（失敗時は次回自動リトライ）
+- **依存ライブラリ:** `requests`, `beautifulsoup4` のみ
